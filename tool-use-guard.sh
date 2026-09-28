@@ -1,53 +1,87 @@
 #!/bin/bash
 # tool-use-guard.sh: Pre-check for dangerous tool invocations
-# Validates tool calls before execution
+# Validates tool calls before execution to prevent behavioral control traps
 # Exit 0 = allowed, 1 = flagged, 2 = blocked
 set -euo pipefail
 
-tool_name="$1"
-tool_args="$2"  # JSON string
+tool_name="${1:-}"
+tool_args="${2:-}"
 
-# Define blocked/dangerous patterns
-declare -A blocked_patterns=(
-  ["rm -rf /"]="System wipe"
-  ["rm -rf ~"]="Home directory wipe"
-  ["> /dev/sda"]="Disk overwrite"
-  ["dd if=/dev/zero"]="Disk zeroing"
-  ["curl.*\\|.*sh"]="Pipe to shell"
-  ["wget.*\\|.*sh"]="Pipe to shell"
-  ["python.*-c.*import os"]="Python OS access"
-  ["python.*-c.*import subprocess"]="Python subprocess"
-  ["eval"]="Eval execution"
-  ["exec"]="Exec execution"
-  ["chmod 777"]="World writable"
-  ["chmod +s"]="Setuid"
-  ["sudo"]="Elevated privileges"
-  ["root"]="Root access"
-)
-
-# Check for dangerous patterns
-for pattern in "${!blocked_patterns[@]}"; do
-  if echo "$tool_args" | grep -qE "$pattern"; then
-    echo "❌ BLOCKED: Dangerous pattern detected" >&2
-    echo "  Pattern: $pattern" >&2
-    echo "  Description: ${blocked_patterns[$pattern]}" >&2
-    echo "  Tool: $tool_name" >&2
-    echo "  Args: $tool_args" >&2
-    exit 2
-  fi
-done
-
-# Check for suspicious URL patterns
-if echo "$tool_args" | grep -qE '(?i)(http|https)://[^ ]*\.(exe|sh|bat|ps1|cmd)'; then
-  echo "⚠️  WARNING: Executable download URL detected" >&2
-  echo "  This could be a behavioral control trap" >&2
+if [ -z "$tool_name" ] || [ -z "$tool_args" ]; then
+  echo "Usage: tool-use-guard.sh <tool_name> <args_json>" >&2
   exit 1
 fi
 
-# Check for base64 encoded commands (common evasion)
+score=0
+issues=()
+
+# Block dangerous system commands
+dangerous_patterns=(
+  'rm\s+-rf\s+/|rm\s+-rf\s+~'
+  'dd\s+if=/dev/'
+  'mkfs'
+  '>\\s*/dev/'
+  'curl.*\\|\\s*sh'
+  'wget.*\\|\\s*sh'
+  'python.*-c.*import\\s+os'
+  'python.*-c.*import\\s+subprocess'
+  'eval\\s'
+  'exec\\s'
+  'chmod\\s+777'
+  'chmod\\s+[0-7]*[4-7]'
+  'sudo'
+  'root'
+)
+
+# Check for dangerous patterns
+for pattern in "${dangerous_patterns[@]}"; do
+  if echo "$tool_args" | grep -qE "$pattern" 2>/dev/null; then
+    score=$((score + 3))
+    issues+=("DANGEROUS: $pattern")
+  fi
+done
+
+# Check for suspicious URLs (executable downloads)
+if echo "$tool_args" | grep -qiE 'https?://[^"]+\.(exe|sh|bat|ps1|cmd)'; then
+  score=$((score + 2))
+  issues+=("SUSPICIOUS: Executable download URL")
+fi
+
+# Check for base64 encoded commands (evasion technique)
 if echo "$tool_args" | grep -qE '[A-Za-z0-9+/]{50,}={0,2}'; then
-  echo "⚠️  WARNING: Potential base64 encoded payload" >&2
-  echo "  Consider decoding and inspecting" >&2
+  score=$((score + 1))
+  issues+=("WARNING: Potential base64 encoded payload")
+fi
+
+# Check for prompt injection patterns in args
+injection_patterns=(
+  'IGNORE\s+PREVIOUS'
+  'DISREGARD\s+ABOVE'
+  'NEW\s+INSTRUCTION'
+  'SYSTEM\s+OVERRIDE'
+  'BYPASS\s+SECURITY'
+)
+
+for pattern in "${injection_patterns[@]}"; do
+  if echo "$tool_args" | grep -qiE "$pattern"; then
+    score=$((score + 2))
+    issues+=("INJECTION: $pattern detected")
+  fi
+done
+
+# Output results
+if [ "$score" -gt 0 ]; then
+  echo "⚠️  Tool Use Guard: $score risk points" >&2
+  for issue in "${issues[@]}"; do
+    echo "  $issue" >&2
+  done
+  
+  if [ "$score" -ge 3 ]; then
+    echo "❌ BLOCKED: Dangerous tool invocation" >&2
+    exit 2
+  fi
+  
+  echo "⚠️  WARNING: Review recommended" >&2
   exit 1
 fi
 
