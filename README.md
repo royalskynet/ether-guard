@@ -65,17 +65,16 @@ bash ether-guard.sh check Bash '{"command":"rm -rf ~"}'
 ```
 
 Exit codes are the same everywhere: `0` clean, `1` warning, `2` blocked.
+`scan` uses a score threshold of 2 by default; pass it before the filename to override it (for example, `ether-guard scan 1 <file>`).
+`all` returns the highest exit code from layers 1–3.
+
+Run the regression tests with `bash test_guard.sh`.
 
 ## Known limitations
 
 These are current behaviours of the scripts, not design goals:
 
-- `scan` reads its **first argument as the numeric score threshold**, so
-  `ether-guard scan <file>` makes layer 2 report `integer expression expected` and
-  exit `1`. `ether-guard scan 1 <file>` is the form that actually blocks (exit `2`).
 - `all` walks layers 1–3. Layer 4 is only reachable through `check`.
-- Layer 3 scores a directory inside a pipeline subshell, so its score is lost and
-  directory scans always come back clean.
 - Layer 3's encoding check uses `grep -P`; the BSD `grep` shipped with macOS has no
   `-P`, so that single check is silently skipped there.
 - Layer 1 is exact-string `grep`, not a JSON parser (as its own comments note), so a

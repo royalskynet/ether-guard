@@ -63,17 +63,16 @@ bash ether-guard.sh check Bash '{"command":"rm -rf ~"}'
 ```
 
 所有模式的結束代碼一致：`0` 乾淨、`1` 警告、`2` 阻擋。
+`scan` 的預設分數門檻是 2；可在檔名之前指定其他門檻，例如 `ether-guard scan 1 <file>`。
+`all` 會回傳第一到第三層中最高的結束代碼。
+
+執行 `bash test_guard.sh` 可驗證這些行為。
 
 ## 已知限制
 
 以下是腳本目前的實際行為，不是設計目標：
 
-- `scan` 會把**第一個參數當成數值型的分數門檻**，所以 `ether-guard scan <file>`
-  會讓第二層印出 `integer expression expected` 並以 `1` 結束；要真的阻擋請用
-  `ether-guard scan 1 <file>`（結束代碼 `2`）。
 - `all` 只會走第一到第三層；第四層要透過 `check` 才會執行。
-- 第三層在掃描目錄時，分數是在管線的子殼層裡累加，會被丟掉，因此目錄掃描結果永遠
-  顯示乾淨。
 - 第三層的編碼檢查使用 `grep -P`，macOS 內建的 BSD `grep` 不支援 `-P`，該項檢查會
   被靜默略過。
 - 第一層是字串比對的 `grep`，不是 JSON 解析器（腳本自己的註解也這麼寫），刻意

@@ -1,10 +1,24 @@
 #!/bin/bash
-# content-guard.sh: Scan file/web content for AI Agent Trap patterns
+# content-guard.sh: Scan file content for AI Agent Trap patterns
 # Detects: hidden instructions, malicious metadata, suspicious formatting
 # Exit 0 = clean, 1 = warnings, 2 = critical
 set -euo pipefail
 
-threshold="${1:-2}"  # 0=strict, 1=medium, 2=normal
+threshold=2
+if [ "$#" -gt 1 ] && [[ "$1" =~ ^[+-]?[0-9]+$ ]]; then
+  threshold="$1"
+  shift
+fi
+if [ "$#" -eq 0 ]; then
+  echo "Usage: content-guard.sh [threshold] <file>..." >&2
+  exit 1
+fi
+for file in "$@"; do
+  if [ ! -f "$file" ] || [ ! -r "$file" ]; then
+    printf 'Cannot read file: %s\n' "$file" >&2
+    exit 1
+  fi
+done
 score=0
 issues=()
 
@@ -39,14 +53,14 @@ semantic_patterns=(
 
 # Check each pattern
 for pattern in "${injection_patterns[@]}"; do
-  if grep -qiE "$pattern" "$@" 2>/dev/null; then
+  if grep -qiE -- "$pattern" "$@" 2>/dev/null; then
     score=$((score + 2))
     issues+=("[INJECTION] Pattern: $pattern")
   fi
 done
 
 for pattern in "${semantic_patterns[@]}"; do
-  if grep -qiE "$pattern" "$@" 2>/dev/null; then
+  if grep -qiE -- "$pattern" "$@" 2>/dev/null; then
     score=$((score + 1))
     issues+=("[SEMANTIC] Pattern: $pattern")
   fi

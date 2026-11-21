@@ -6,7 +6,7 @@
 #   ether-guard [mode] [args...]
 #
 # Modes:
-#   scan <file>     - Scan file for content traps
+#   scan [threshold] <file> - Scan file for content traps
 #   check <tool> <args> - Pre-check tool invocation
 #   all <dir>       - Full scan of directory
 #
@@ -14,6 +14,23 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+scan_content_files() {
+  local file status worst=0
+  while IFS= read -r -d '' file; do
+    status=0
+    bash "$SCRIPT_DIR/content-guard.sh" "$file" || status=$?
+    case "$status" in
+      1) printf '⚠️  Warning: %s\n' "$file" >&2 ;;
+      2) printf '❌ Blocked: %s\n' "$file" >&2 ;;
+    esac
+    if [ "$status" -gt "$worst" ]; then
+      worst="$status"
+    fi
+  done
+  return "$worst"
+}
+
 mode="${1:-scan}"
 shift || true
 
@@ -26,7 +43,7 @@ case "$mode" in
   scan)
     # Content scanning mode
     if [ $# -eq 0 ]; then
-      echo "Usage: ether-guard scan <file|url>" >&2
+      echo "Usage: ether-guard scan [threshold] <file>" >&2
       exit 1
     fi
     bash "$SCRIPT_DIR/content-guard.sh" "$@"
@@ -50,26 +67,44 @@ case "$mode" in
       exit 1
     fi
     dir="$1"
+    if [ ! -d "$dir" ]; then
+      printf 'Not a directory: %s\n' "$dir" >&2
+      exit 1
+    fi
+    case "$dir" in
+      /*) ;;
+      *) dir="./$dir" ;;
+    esac
     
     echo "📁 Scanning: $dir" >&2
     echo "" >&2
     
     # Layer 1: Project config scan
     echo "🔍 Layer 1: Project config scan..." >&2
-    bash "$SCRIPT_DIR/claude-safe-guard.sh" "$dir" || exit 2
+    worst=0
+    bash "$SCRIPT_DIR/claude-safe-guard.sh" "$dir" || worst=$?
     
     # Layer 2: Content scan
     echo "🔍 Layer 2: Content trap scan..." >&2
-    find "$dir" -type f \( -name "*.md" -o -name "*.txt" -o -name "*.json" -o -name "*.yaml" -o -name "*.yml" \) 2>/dev/null | while read -r f; do
-      bash "$SCRIPT_DIR/content-guard.sh" "$f" || echo "⚠️  Warning: $f"
-    done
+    status=0
+    find "$dir" -type f \( -name "*.md" -o -name "*.txt" -o -name "*.json" -o -name "*.yaml" -o -name "*.yml" \) -print0 |
+      scan_content_files || status=$?
+    if [ "$status" -gt "$worst" ]; then
+      worst="$status"
+    fi
     
     # Layer 3: Memory/RAG scan
     echo "🔍 Layer 3: Memory poisoning scan..." >&2
-    bash "$SCRIPT_DIR/memory-guard.sh" "$dir" || exit 2
-    
-    echo "" >&2
-    echo "✅ All layers passed" >&2
+    status=0
+    bash "$SCRIPT_DIR/memory-guard.sh" "$dir" || status=$?
+    if [ "$status" -gt "$worst" ]; then
+      worst="$status"
+    fi
+    if [ "$worst" -eq 0 ]; then
+      echo "" >&2
+      echo "✅ All layers passed" >&2
+    fi
+    exit "$worst"
     ;;
     
   help|--help|-h)
@@ -79,7 +114,7 @@ Ether Guard - Multi-Layer AI Agent Defense
 Usage: ether-guard <mode> [args...]
 
 Modes:
-  scan <file>     Scan file for content traps (injection, semantic manipulation)
+  scan [threshold] <file>  Scan file for content traps (default threshold: 2)
   check <tool> <args>  Validate tool invocation before execution
   all <dir>       Full multi-layer scan of directory
   help            Show this help
