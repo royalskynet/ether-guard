@@ -6,6 +6,7 @@ set -euo pipefail
 
 score=0
 warnings=()
+scan_status=0
 
 # Check for suspicious metadata patterns
 check_file() {
@@ -40,8 +41,13 @@ for arg in "$@"; do
       *) arg="./$arg" ;;
     esac
     while IFS= read -r -d '' f; do
-      check_file "$f"
-    done < <(find "$arg" -type f \( -name "*.md" -o -name "*.txt" -o -name "*.json" -o -name "*.yaml" \) -print0)
+      if [ -z "$f" ]; then
+        scan_status=1
+      else
+        check_file "$f"
+      fi
+    # An empty record signals that find could not complete the traversal.
+    done < <(find "$arg" -type f \( -name "*.md" -o -name "*.txt" -o -name "*.json" -o -name "*.yaml" \) -print0 || printf '\0')
   fi
 done
 
@@ -54,4 +60,4 @@ if [ "$score" -gt 0 ]; then
   exit 2
 fi
 
-exit 0
+exit "$scan_status"

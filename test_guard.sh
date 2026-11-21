@@ -42,4 +42,14 @@ if grep -Fq 'All layers passed' "$work/result.log"; then
   exit 1
 fi
 
+(
+  find() {
+    command find "$@" || return "$?"
+    return 1
+  }
+  export -f find
+  expect_status 1 bash "$here/memory-guard.sh" "$work/clean"
+  expect_status 2 bash "$here/memory-guard.sh" "$work/memory"
+)
+
 echo 'Guard regression tests passed'
