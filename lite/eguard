@@ -1,0 +1,81 @@
+#!/bin/bash
+# eguard — 使用者命令入口（status/config/log/arm/disarm），全程原生視窗
+# 來源: source 各模組；本檔當 CLI 用
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+: "${EGUARD_DIR:="${HOME}/.eguard"}"
+CONFIG_FILE="${EGUARD_DIR}/config.sh"
+STATE_FILE="${EGUARD_DIR}/state"
+
+# 載入共用
+[ -f "$SCRIPT_DIR/log.sh" ] && source "$SCRIPT_DIR/log.sh"
+[ -f "$SCRIPT_DIR/gui.sh" ] && source "$SCRIPT_DIR/gui.sh"
+[ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE"
+LA_LOG_DIR="${EGUARD_DIR}/logs"
+
+at_usage() {
+  cat <<EOF
+用法: eguard <command>
+  status   查狀態 + 健檢燈號（原生視窗）
+  config   改設定（逐項原生視窗）
+  log      看最近 log（原生視窗）
+  arm      強制武裝
+  disarm   強制解除
+  test     發測試推播
+EOF
+}
+
+at_status_text() {
+  local st
+  st="$(cat "$STATE_FILE" 2>/dev/null || echo "UNKNOWN")"
+  local bt=""
+  if [ -n "$TRUSTED_MAC" ]; then
+    local rssi; rssi="$(eguard_bt_rssi_first 2>/dev/null)"
+    bt="RSSI=$rssi"
+  fi
+  printf '狀態: %s\n%s\n' "$st" "$bt"
+}
+
+at_status() {
+  local txt; txt="$(at_status_text)"
+  # 併健檢
+  if [ -f "$SCRIPT_DIR/healthcheck.sh" ]; then
+    source "$SCRIPT_DIR/healthcheck.sh"
+    local r; r="$(hc_run 2>/dev/null)"
+    txt="${txt}\n--- 健檢 ---\n${r}"
+  fi
+  gui_show "防竊狀態" "$txt" || echo "$txt"
+}
+
+at_config() {
+  # 逐項原生對話框改 config（最常用：信任裝置/門檻/時序）
+  gui_notify "防竊設定" "開啟設定對話框…"
+  echo "使用方法: eguard config 目前以原生視窗逐項編輯；此為軸承 stub（GUI 互動型，實機操作）"
+}
+
+at_log() {
+  local f="${LA_LOG_DIR}/eguard-$(date +%Y-%m-%d).log"
+  if [ ! -f "$f" ]; then echo "無 log"; return; fi
+  local tail; tail="$(tail -50 "$f")"
+  gui_show "防竊 log" "$tail" || echo "$tail"
+}
+
+at_arm() { printf 'ARMED\n' > "$STATE_FILE"; la_log INFO guard "manual arm"; echo "ARMED"; }
+at_disarm() { printf 'DISARMED\n' > "$STATE_FILE"; la_log INFO guard "manual disarm"; echo "DISARMED"; }
+
+at_test() {
+  [ -f "$SCRIPT_DIR/notify.sh" ] && source "$SCRIPT_DIR/notify.sh"
+  local text="${1:-防竊測試推播 $(date +%H:%M:%S)}"
+  notify_send "$text" && echo "推播已送" || echo "推播列入隊列（可能無 token）"
+}
+
+cmd="${1:-}"
+case "$cmd" in
+  status) at_status ;;
+  config) at_config ;;
+  log) at_log ;;
+  arm) at_arm ;;
+  disarm) at_disarm ;;
+  test) at_test "${2:-}" ;;
+  *) at_usage ;;
+esac

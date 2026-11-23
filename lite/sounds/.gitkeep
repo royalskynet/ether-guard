@@ -1,0 +1,2 @@
+# 放警笛音檔（.wav/.mp3/.aiff）。無音檔時 guard 會用 say 語音合成警報。
+# 在 config.sh 設定 SIREN_SOUND 指向此處音檔。

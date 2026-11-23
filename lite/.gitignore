@@ -1,0 +1,15 @@
+# 產出／本機運作檔（不入 repo）
+config.sh
+chat_id
+state
+logs/
+queue/
+bin/
+
+# 執行追蹤（內部，不入 public）
+ACCEPTANCE.md
+frontier.md
+*.log
+
+# 系統
+.DS_Store
